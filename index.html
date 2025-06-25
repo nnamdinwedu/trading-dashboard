@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Account Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: A clean, card-based dashboard. Each of the three accounts gets its own card for a clear, organized view. This is more intuitive than a spreadsheet row. Users can input balances directly on each card, and the UI provides immediate, real-time feedback by updating the drawdown threshold value. A line chart at the bottom provides historical context, allowing the user to track performance over time, which is a critical need for any trader. This structure separates concerns (individual accounts vs. historical trend) and facilitates quick risk assessment. -->
+    <!-- Visualization & Content Choices: 
+        - Account Data (Balances, Thresholds): Report Info -> Goal: Inform/Update -> Presentation: Interactive Cards -> Interaction: User types in an input field, JS updates text values in real-time. -> Justification: More engaging and user-friendly than static cells. -> Library/Method: Vanilla JS, HTML/Tailwind.
+        - Historical Performance: Report Info -> Goal: Show change over time -> Presentation: Line Chart -> Interaction: Buttons to switch view between accounts; a "Log Data" button captures current state and updates the chart. -> Justification: Visual trends are easier to analyze than rows of numbers. -> Library/Method: Chart.js for canvas-based rendering.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F5F5F4; /* A warm neutral background (Stone 100) */
+        }
+        .card {
+            background-color: white;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .chart-container {
+            position: relative;
+            background-color: white;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            height: 300px;
+            max-height: 50vh;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body class="text-stone-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-stone-900">Trading Account Dashboard</h1>
+            <p class="text-stone-600 mt-2">Monitor your account balances and -2% daily drawdown thresholds in real-time.</p>
+        </header>
+
+        <main>
+            <!-- Account Cards Section -->
+            <section id="account-cards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                <!-- Cards will be injected here by JavaScript -->
+            </section>
+
+            <!-- Chart and Controls Section -->
+            <section id="history-section" class="space-y-6">
+                <div class="text-center">
+                    <h2 class="text-2xl font-bold text-stone-900">Balance History</h2>
+                    <p class="text-stone-600 mt-1">Visualize your account performance over time. Select an account to view its history.</p>
+                </div>
+                
+                <div class="flex justify-center items-center flex-wrap gap-4">
+                    <div id="chart-controls" class="flex justify-center flex-wrap gap-2">
+                         <!-- Chart control buttons will be injected here -->
+                    </div>
+                    <button id="log-button" class="bg-sky-600 text-white font-semibold py-2 px-5 rounded-lg shadow hover:bg-sky-700 transition-colors">
+                        Log Current Balances
+                    </button>
+                </div>
+
+                <div class="chart-container w-full max-w-5xl mx-auto">
+                    <canvas id="balanceChart"></canvas>
+                </div>
+            </section>
+        </main>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            
+            const initialData = {
+                accounts: [
+                    { id: 1, name: "Account 1 (FundedNext)", balance: 100000, history: [{date: getFormattedDate(new Date(Date.now() - 86400000 * 2)), balance: 99500}, {date: getFormattedDate(new Date(Date.now() - 86400000)), balance: 101000}] },
+                    { id: 2, name: "Account 2 (GFT)", balance: 50000, history: [{date: getFormattedDate(new Date(Date.now() - 86400000 * 2)), balance: 50500}, {date: getFormattedDate(new Date(Date.now() - 86400000)), balance: 50200}] },
+                    { id: 3, name: "Account 3 (GFT)", balance: 25000, history: [{date: getFormattedDate(new Date(Date.now() - 86400000 * 2)), balance: 24800}, {date: getFormattedDate(new Date(Date.now() - 86400000)), balance: 25150}] }
+                ],
+                activeChartAccountId: 1
+            };
+
+            const accountCardsContainer = document.getElementById('account-cards');
+            const chartControlsContainer = document.getElementById('chart-controls');
+            const logButton = document.getElementById('log-button');
+            const ctx = document.getElementById('balanceChart').getContext('2d');
+            let balanceChart;
+            
+            function getFormattedDate(date) {
+                const day = String(date.getDate()).padStart(2, '0');
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const year = date.getFullYear();
+                return `${month}/${day}/${year}`;
+            }
+
+            function formatCurrency(value) {
+                return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+            }
+
+            function createAccountCard(account) {
+                const card = document.createElement('div');
+                card.className = 'card p-6 flex flex-col space-y-4';
+                card.id = `account-card-${account.id}`;
+
+                const drawdown = account.balance * 0.98;
+
+                card.innerHTML = `
+                    <h3 class="text-xl font-semibold text-stone-700 text-center">${account.name}</h3>
+                    <div class="flex-grow flex flex-col justify-center items-center space-y-4">
+                        <div>
+                            <label for="balance-input-${account.id}" class="text-sm font-medium text-stone-500">Current Balance (USD)</label>
+                            <input type="number" id="balance-input-${account.id}" value="${account.balance.toFixed(2)}" class="mt-1 text-center w-full text-3xl font-bold bg-stone-100 rounded-md p-2 border border-stone-300 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition">
+                        </div>
+                        <div class="text-center">
+                            <p class="text-sm font-medium text-stone-500">-2% Drawdown Threshold</p>
+                            <p id="drawdown-output-${account.id}" class="text-2xl font-semibold text-red-600">${formatCurrency(drawdown)}</p>
+                        </div>
+                    </div>
+                `;
+                
+                const input = card.querySelector(`#balance-input-${account.id}`);
+                input.addEventListener('input', (e) => {
+                    const newBalance = parseFloat(e.target.value) || 0;
+                    const accountToUpdate = initialData.accounts.find(a => a.id === account.id);
+                    accountToUpdate.balance = newBalance;
+                    
+                    const newDrawdown = newBalance * 0.98;
+                    document.getElementById(`drawdown-output-${account.id}`).textContent = formatCurrency(newDrawdown);
+                });
+                
+                return card;
+            }
+            
+            function createChartControls() {
+                chartControlsContainer.innerHTML = '';
+                initialData.accounts.forEach(account => {
+                    const button = document.createElement('button');
+                    button.textContent = account.name;
+                    button.className = `chart-control-btn px-4 py-2 rounded-lg font-medium transition-colors`;
+                    if (account.id === initialData.activeChartAccountId) {
+                        button.classList.add('bg-sky-600', 'text-white', 'shadow');
+                    } else {
+                        button.classList.add('bg-white', 'text-stone-700', 'hover:bg-stone-200');
+                    }
+                    button.addEventListener('click', () => {
+                        initialData.activeChartAccountId = account.id;
+                        renderChart();
+                        createChartControls(); 
+                    });
+                    chartControlsContainer.appendChild(button);
+                });
+            }
+
+            function renderAllCards() {
+                accountCardsContainer.innerHTML = '';
+                initialData.accounts.forEach(account => {
+                    const card = createAccountCard(account);
+                    accountCardsContainer.appendChild(card);
+                });
+            }
+            
+            function renderChart() {
+                const activeAccount = initialData.accounts.find(a => a.id === initialData.activeChartAccountId);
+                if (!activeAccount) return;
+                
+                const data = {
+                    labels: activeAccount.history.map(h => h.date),
+                    datasets: [{
+                        label: `${activeAccount.name} Balance`,
+                        data: activeAccount.history.map(h => h.balance),
+                        borderColor: '#0284C7', // sky-600
+                        backgroundColor: 'rgba(2, 132, 199, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1,
+                        pointBackgroundColor: '#0284C7',
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                    }]
+                };
+
+                const options = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            ticks: {
+                                callback: function(value, index, values) {
+                                    return formatCurrency(value);
+                                }
+                            }
+                        },
+                        x: {
+                           grid: {
+                                display: false
+                           }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += formatCurrency(context.parsed.y);
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if (balanceChart) {
+                    balanceChart.destroy();
+                }
+                balanceChart = new Chart(ctx, { type: 'line', data, options });
+            }
+
+            logButton.addEventListener('click', () => {
+                const currentDate = getFormattedDate(new Date());
+                initialData.accounts.forEach(account => {
+                    const lastEntry = account.history[account.history.length - 1];
+                    // Only add if date is new or history is empty
+                    if(!lastEntry || lastEntry.date !== currentDate) {
+                        account.history.push({ date: currentDate, balance: account.balance });
+                    } else {
+                        // If an entry for today already exists, update it
+                        lastEntry.balance = account.balance;
+                    }
+                });
+                renderChart();
+            });
+
+            function initialize() {
+                renderAllCards();
+                createChartControls();
+                renderChart();
+            }
+
+            initialize();
+        });
+    </script>
+</body>
+</html>
